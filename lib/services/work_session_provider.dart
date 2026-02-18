@@ -15,6 +15,7 @@ class WorkSessionProvider extends ChangeNotifier {
   DateTime? _breakStartTime;
   Duration _totalBreakDuration = Duration.zero;
   Timer? _timer;
+  Timer? _pingTimer;
   Duration _elapsed = Duration.zero;
   String? _userPhone;
   String? _userName;
@@ -93,13 +94,13 @@ class WorkSessionProvider extends ChangeNotifier {
         _state = WorkState.working;
         _updateElapsed();
         _startTimer();
+        _startPingTimer();
       } else if (stateStr == 'onBreak' && _startTime != null) {
         _state = WorkState.onBreak;
         if (breakStartStr != null) {
           _breakStartTime = DateTime.tryParse(breakStartStr);
         }
         _updateElapsed();
-        // Nie startuj timera - jesteśmy na przerwie
       }
     }
 
@@ -125,8 +126,7 @@ class WorkSessionProvider extends ChangeNotifier {
         if (_startTime != null) {
           prefs.setString('start_time', _startTime!.toIso8601String());
         }
-        prefs.setInt(
-            'break_duration_ms', _totalBreakDuration.inMilliseconds);
+        prefs.setInt('break_duration_ms', _totalBreakDuration.inMilliseconds);
         prefs.remove('break_start_time');
         break;
       case WorkState.onBreak:
@@ -134,8 +134,7 @@ class WorkSessionProvider extends ChangeNotifier {
         if (_startTime != null) {
           prefs.setString('start_time', _startTime!.toIso8601String());
         }
-        prefs.setInt(
-            'break_duration_ms', _totalBreakDuration.inMilliseconds);
+        prefs.setInt('break_duration_ms', _totalBreakDuration.inMilliseconds);
         if (_breakStartTime != null) {
           prefs.setString(
               'break_start_time', _breakStartTime!.toIso8601String());
@@ -176,10 +175,45 @@ class WorkSessionProvider extends ChangeNotifier {
 
     // Sprawdź czy pracownik wybrany
     if (_userPhone == null || _userPhone!.isEmpty) {
-      return 'Wybierz pracownika w Ustawieniach';
+      return 'Wpisz numer telefonu w Ustawieniach';
     }
 
     return null; // OK
+  }
+
+  /// PING lokalizacji co 15 min
+  void _startPingTimer() {
+    _pingTimer?.cancel();
+    _pingTimer = Timer.periodic(const Duration(minutes: 15), (_) async {
+      if (_state == WorkState.working && _userPhone != null) {
+        try {
+          Position? position = await LocationService.getCurrentPosition();
+          if (position != null) {
+            await WebhookService.sendAction(
+              type: 'PING',
+              phone: _userPhone!,
+              lat: position.latitude,
+              lon: position.longitude,
+            );
+
+            // Aktualizuj status lokalizacji
+            double distance = LocationService.distanceFromCompany(
+                position.latitude, position.longitude);
+            _locationStatus = distance <= AppConstants.alertRadiusMeters
+                ? LocationStatus.inCompany
+                : LocationStatus.outsideCompany;
+            notifyListeners();
+          }
+        } catch (e) {
+          // Cichy błąd - ping nie krytyczny
+        }
+      }
+    });
+  }
+
+  void _stopPingTimer() {
+    _pingTimer?.cancel();
+    _pingTimer = null;
   }
 
   /// START PRACY
@@ -217,16 +251,18 @@ class WorkSessionProvider extends ChangeNotifier {
       _state = WorkState.working;
       _elapsed = Duration.zero;
       _startTimer();
-      _locationStatus = LocationService.distanceFromCompany(
-                  position.latitude, position.longitude) <=
-              AppConstants.alertRadiusMeters
+      _startPingTimer();
+
+      double distance = LocationService.distanceFromCompany(
+          position.latitude, position.longitude);
+      _locationStatus = distance <= AppConstants.alertRadiusMeters
           ? LocationStatus.inCompany
           : LocationStatus.outsideCompany;
 
       _isSending = false;
       await _saveState();
       notifyListeners();
-      return null; // sukces
+      return null;
     } catch (e) {
       _isSending = false;
       _lastError = e.toString();
@@ -265,6 +301,7 @@ class WorkSessionProvider extends ChangeNotifier {
       }
 
       _timer?.cancel();
+      _stopPingTimer();
       _state = WorkState.idle;
       _startTime = null;
       _totalBreakDuration = Duration.zero;
@@ -311,6 +348,7 @@ class WorkSessionProvider extends ChangeNotifier {
 
       _breakStartTime = DateTime.now();
       _timer?.cancel();
+      _stopPingTimer();
       _state = WorkState.onBreak;
 
       _isSending = false;
@@ -353,13 +391,13 @@ class WorkSessionProvider extends ChangeNotifier {
       }
 
       if (_breakStartTime != null) {
-        _totalBreakDuration +=
-            DateTime.now().difference(_breakStartTime!);
+        _totalBreakDuration += DateTime.now().difference(_breakStartTime!);
       }
       _breakStartTime = null;
       _state = WorkState.working;
       _updateElapsed();
       _startTimer();
+      _startPingTimer();
 
       _isSending = false;
       await _saveState();
@@ -390,8 +428,7 @@ class WorkSessionProvider extends ChangeNotifier {
   @override
   void dispose() {
     _timer?.cancel();
+    _pingTimer?.cancel();
     super.dispose();
   }
 }
-
-

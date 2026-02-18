@@ -1,13 +1,29 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
-import '../constants.dart';
 
 class HolidaysScreen extends StatelessWidget {
   const HolidaysScreen({super.key});
 
+  static const List<Map<String, String>> holidays = [
+    {'date': '2026-01-01', 'day': '1', 'month': 'Styczeń', 'weekday': 'Czwartek', 'name': 'Nowy Rok'},
+    {'date': '2026-01-06', 'day': '6', 'month': 'Styczeń', 'weekday': 'Wtorek', 'name': 'Trzech Króli'},
+    {'date': '2026-04-05', 'day': '5', 'month': 'Kwiecień', 'weekday': 'Niedziela', 'name': 'Wielkanoc'},
+    {'date': '2026-04-06', 'day': '6', 'month': 'Kwiecień', 'weekday': 'Poniedziałek', 'name': 'Poniedziałek Wielkanocny'},
+    {'date': '2026-05-01', 'day': '1', 'month': 'Maj', 'weekday': 'Piątek', 'name': 'Święto Pracy'},
+    {'date': '2026-05-03', 'day': '3', 'month': 'Maj', 'weekday': 'Niedziela', 'name': 'Święto Konstytucji 3 Maja'},
+    {'date': '2026-05-14', 'day': '14', 'month': 'Maj', 'weekday': 'Czwartek', 'name': 'Zielone Świątki'},
+    {'date': '2026-06-04', 'day': '4', 'month': 'Czerwiec', 'weekday': 'Czwartek', 'name': 'Boże Ciało'},
+    {'date': '2026-08-15', 'day': '15', 'month': 'Sierpień', 'weekday': 'Sobota', 'name': 'Wniebowzięcie NMP'},
+    {'date': '2026-11-01', 'day': '1', 'month': 'Listopad', 'weekday': 'Niedziela', 'name': 'Wszystkich Świętych'},
+    {'date': '2026-11-11', 'day': '11', 'month': 'Listopad', 'weekday': 'Środa', 'name': 'Święto Niepodległości'},
+    {'date': '2026-12-25', 'day': '25', 'month': 'Grudzień', 'weekday': 'Piątek', 'name': 'Boże Narodzenie'},
+    {'date': '2026-12-26', 'day': '26', 'month': 'Grudzień', 'weekday': 'Sobota', 'name': 'Drugi dzień Bożego Narodzenia'},
+  ];
+
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
+    final todayStr =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
 
     return Scaffold(
       appBar: AppBar(
@@ -16,16 +32,11 @@ class HolidaysScreen extends StatelessWidget {
       ),
       body: ListView.builder(
         padding: const EdgeInsets.all(16),
-        itemCount: AppConstants.holidays2026.length,
+        itemCount: holidays.length,
         itemBuilder: (context, index) {
-          final holiday = AppConstants.holidays2026[index];
-          final date = DateTime.parse(holiday['date']!);
-          final isPast = date.isBefore(now);
-          final isToday = DateFormat('yyyy-MM-dd').format(date) ==
-              DateFormat('yyyy-MM-dd').format(now);
-
-          final dayName = _polishDayName(date.weekday);
-          final dateFormatted = DateFormat('d MMMM', 'pl').format(date);
+          final holiday = holidays[index];
+          final isPast = holiday['date']!.compareTo(todayStr) < 0;
+          final isToday = holiday['date'] == todayStr;
 
           return Container(
             margin: const EdgeInsets.only(bottom: 8),
@@ -50,7 +61,7 @@ class HolidaysScreen extends StatelessWidget {
                 ),
                 child: Center(
                   child: Text(
-                    date.day.toString(),
+                    holiday['day']!,
                     style: TextStyle(
                       color: isPast ? Colors.white24 : Colors.red.shade300,
                       fontSize: 20,
@@ -68,7 +79,7 @@ class HolidaysScreen extends StatelessWidget {
                 ),
               ),
               subtitle: Text(
-                '$dayName, ${_polishMonth(date.month)} ${date.day}',
+                '${holiday['weekday']}, ${holiday['day']} ${holiday['month']}',
                 style: TextStyle(
                   color: isPast ? Colors.white24 : Colors.white54,
                   fontSize: 13,
@@ -89,26 +100,5 @@ class HolidaysScreen extends StatelessWidget {
         },
       ),
     );
-  }
-
-  String _polishDayName(int weekday) {
-    const days = [
-      'Poniedziałek',
-      'Wtorek',
-      'Środa',
-      'Czwartek',
-      'Piątek',
-      'Sobota',
-      'Niedziela',
-    ];
-    return days[weekday - 1];
-  }
-
-  String _polishMonth(int month) {
-    const months = [
-      'stycznia', 'lutego', 'marca', 'kwietnia', 'maja', 'czerwca',
-      'lipca', 'sierpnia', 'września', 'października', 'listopada', 'grudnia',
-    ];
-    return months[month - 1];
   }
 }
