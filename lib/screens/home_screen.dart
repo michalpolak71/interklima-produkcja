@@ -1,0 +1,524 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../services/work_session_provider.dart';
+import '../services/location_service.dart';
+import 'settings_screen.dart';
+import 'holidays_screen.dart';
+import 'leave_request_screen.dart';
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Sprawdź czy pracownik wybrany
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider =
+          Provider.of<WorkSessionProvider>(context, listen: false);
+      if (provider.userPhone == null || provider.userPhone!.isEmpty) {
+        _showSelectEmployeeDialog();
+      }
+    });
+  }
+
+  void _showSelectEmployeeDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1B2838),
+        title: const Text('Witaj!', style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'Aby korzystać z aplikacji, najpierw wybierz swoje nazwisko w Ustawieniach.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const SettingsScreen()),
+              );
+            },
+            child: const Text('Przejdź do Ustawień'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red.shade700,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _showSuccess(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.green.shade700,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _handleStart(WorkSessionProvider provider) async {
+    final error = await provider.startWork();
+    if (error != null) {
+      _showError(error);
+    } else {
+      _showSuccess('Praca rozpoczęta ✓');
+    }
+  }
+
+  Future<void> _handleStop(WorkSessionProvider provider) async {
+    // Potwierdzenie
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1B2838),
+        title: const Text('Zakończyć pracę?',
+            style: TextStyle(color: Colors.white)),
+        content: Text(
+          'Czas pracy: ${provider.elapsedFormatted}',
+          style: const TextStyle(color: Colors.white70, fontSize: 18),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Nie'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Tak, kończę'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final error = await provider.stopWork();
+      if (error != null) {
+        _showError(error);
+      } else {
+        _showSuccess('Praca zakończona ✓');
+      }
+    }
+  }
+
+  Future<void> _handleBreak(WorkSessionProvider provider) async {
+    final error = await provider.startBreak();
+    if (error != null) {
+      _showError(error);
+    } else {
+      _showSuccess('Przerwa rozpoczęta');
+    }
+  }
+
+  Future<void> _handleEndBreak(WorkSessionProvider provider) async {
+    final error = await provider.endBreak();
+    if (error != null) {
+      _showError(error);
+    } else {
+      _showSuccess('Przerwa zakończona ✓');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<WorkSessionProvider>(
+      builder: (context, provider, _) {
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(
+              provider.userName ?? 'INTERKLIMA',
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
+            ),
+            backgroundColor: const Color(0xFF1B2838),
+            centerTitle: true,
+          ),
+          drawer: _buildDrawer(context),
+          body: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              child: Column(
+                children: [
+                  // Logo
+                  Image.asset(
+                    'assets/images/logo_transparent.png',
+                    height: 80,
+                    fit: BoxFit.contain,
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Status lokalizacji
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: provider.locationStatusColor.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: provider.locationStatusColor.withOpacity(0.4),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _getLocationIcon(provider.locationStatus),
+                          color: provider.locationStatusColor,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          provider.locationStatusText,
+                          style: TextStyle(
+                            color: provider.locationStatusColor,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+
+                  // Biegnący licznik
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1B2838),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _getTimerGlowColor(provider)
+                              .withOpacity(0.2),
+                          blurRadius: 20,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          _getStateLabel(provider.state),
+                          style: TextStyle(
+                            color: _getStateColor(provider.state),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 2,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          provider.elapsedFormatted,
+                          style: TextStyle(
+                            color: provider.isIdle
+                                ? Colors.white38
+                                : Colors.white,
+                            fontSize: 56,
+                            fontWeight: FontWeight.w300,
+                            fontFamily: 'monospace',
+                            letterSpacing: 4,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 40),
+
+                  // Przyciski
+                  if (provider.isSending)
+                    const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Column(
+                        children: [
+                          CircularProgressIndicator(
+                            color: Color(0xFF4FC3F7),
+                          ),
+                          SizedBox(height: 12),
+                          Text(
+                            'Wysyłanie...',
+                            style: TextStyle(color: Colors.white54),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    _buildButtons(provider),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildButtons(WorkSessionProvider provider) {
+    switch (provider.state) {
+      case WorkState.idle:
+        return _buildActionButton(
+          label: 'START PRACY',
+          icon: Icons.play_arrow_rounded,
+          color: const Color(0xFF4CAF50),
+          onPressed: () => _handleStart(provider),
+        );
+
+      case WorkState.working:
+        return Column(
+          children: [
+            _buildActionButton(
+              label: 'STOP PRACY',
+              icon: Icons.stop_rounded,
+              color: const Color(0xFFE53935),
+              onPressed: () => _handleStop(provider),
+            ),
+            const SizedBox(height: 16),
+            _buildActionButton(
+              label: 'PRZERWA',
+              icon: Icons.pause_rounded,
+              color: const Color(0xFFFFA726),
+              onPressed: () => _handleBreak(provider),
+              small: true,
+            ),
+          ],
+        );
+
+      case WorkState.onBreak:
+        return Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border:
+                    Border.all(color: Colors.orange.withOpacity(0.3)),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.coffee_rounded,
+                      color: Colors.orange, size: 24),
+                  SizedBox(width: 8),
+                  Text(
+                    'Jesteś na przerwie',
+                    style: TextStyle(
+                      color: Colors.orange,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            _buildActionButton(
+              label: 'KONIEC PRZERWY',
+              icon: Icons.play_arrow_rounded,
+              color: const Color(0xFFFFA726),
+              onPressed: () => _handleEndBreak(provider),
+            ),
+            const SizedBox(height: 16),
+            _buildActionButton(
+              label: 'STOP PRACY',
+              icon: Icons.stop_rounded,
+              color: const Color(0xFFE53935),
+              onPressed: () => _handleStop(provider),
+              small: true,
+            ),
+          ],
+        );
+    }
+  }
+
+  Widget _buildActionButton({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onPressed,
+    bool small = false,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      height: small ? 56 : 72,
+      child: ElevatedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: small ? 24 : 32),
+        label: Text(
+          label,
+          style: TextStyle(
+            fontSize: small ? 16 : 20,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1.5,
+          ),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          elevation: 4,
+          shadowColor: color.withOpacity(0.4),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDrawer(BuildContext context) {
+    return Drawer(
+      backgroundColor: const Color(0xFF1B2838),
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF1B3A5C), Color(0xFF0F1923)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Image.asset(
+                  'assets/images/logo_transparent.png',
+                  height: 50,
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Dział Produkcja',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _drawerItem(
+            icon: Icons.beach_access_rounded,
+            title: 'Wniosek urlopowy',
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const LeaveRequestScreen()),
+              );
+            },
+          ),
+          _drawerItem(
+            icon: Icons.calendar_month_rounded,
+            title: 'Dni wolne 2026',
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const HolidaysScreen()),
+              );
+            },
+          ),
+          const Divider(color: Colors.white12),
+          _drawerItem(
+            icon: Icons.settings_rounded,
+            title: 'Ustawienia',
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const SettingsScreen()),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _drawerItem({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      leading: Icon(icon, color: Colors.white70),
+      title: Text(title, style: const TextStyle(color: Colors.white)),
+      onTap: onTap,
+    );
+  }
+
+  IconData _getLocationIcon(LocationStatus status) {
+    switch (status) {
+      case LocationStatus.inCompany:
+        return Icons.location_on;
+      case LocationStatus.outsideCompany:
+        return Icons.location_off;
+      case LocationStatus.gpsDisabled:
+        return Icons.gps_off;
+      case LocationStatus.permissionDenied:
+        return Icons.block;
+      case LocationStatus.loading:
+        return Icons.my_location;
+    }
+  }
+
+  String _getStateLabel(WorkState state) {
+    switch (state) {
+      case WorkState.idle:
+        return 'GOTOWY';
+      case WorkState.working:
+        return 'W PRACY';
+      case WorkState.onBreak:
+        return 'PRZERWA';
+    }
+  }
+
+  Color _getStateColor(WorkState state) {
+    switch (state) {
+      case WorkState.idle:
+        return Colors.white38;
+      case WorkState.working:
+        return Colors.green;
+      case WorkState.onBreak:
+        return Colors.orange;
+    }
+  }
+
+  Color _getTimerGlowColor(WorkSessionProvider provider) {
+    switch (provider.state) {
+      case WorkState.idle:
+        return Colors.blueGrey;
+      case WorkState.working:
+        return Colors.green;
+      case WorkState.onBreak:
+        return Colors.orange;
+    }
+  }
+}

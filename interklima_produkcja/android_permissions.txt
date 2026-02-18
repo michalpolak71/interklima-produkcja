@@ -1,0 +1,13 @@
+<!-- android/app/src/main/AndroidManifest.xml -->
+<!-- DODAJ te uprawnienia do istniejącego AndroidManifest.xml -->
+<!-- (flutter create generuje podstawowy plik - dodaj poniższe) -->
+
+<!--
+Uprawnienia do dodania w tagu <manifest>:
+
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+-->

@@ -1,0 +1,11 @@
+<!-- ios/Runner/Info.plist -->
+<!-- DODAJ te klucze do istniejącego Info.plist: -->
+
+<!--
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Aplikacja wymaga lokalizacji do rejestracji czasu pracy.</string>
+    <key>NSLocationAlwaysUsageDescription</key>
+    <string>Aplikacja wymaga lokalizacji do rejestracji czasu pracy.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>Aplikacja wymaga lokalizacji do rejestracji czasu pracy.</string>
+-->
