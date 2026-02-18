@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 import '../constants.dart';
 import 'location_service.dart';
 import 'connectivity_service.dart';
@@ -16,16 +18,20 @@ class WorkSessionProvider extends ChangeNotifier {
   Duration _totalBreakDuration = Duration.zero;
   Timer? _timer;
   Timer? _pingTimer;
+  Timer? _leaveCheckTimer;
   Duration _elapsed = Duration.zero;
+  Duration _breakElapsed = Duration.zero;
   String? _userPhone;
   String? _userName;
   LocationStatus _locationStatus = LocationStatus.loading;
   String? _lastError;
   bool _isSending = false;
+  String? _leaveNotification;
 
   // Getters
   WorkState get state => _state;
   Duration get elapsed => _elapsed;
+  Duration get breakElapsed => _breakElapsed;
   String? get userPhone => _userPhone;
   String? get userName => _userName;
   LocationStatus get locationStatus => _locationStatus;
@@ -34,6 +40,7 @@ class WorkSessionProvider extends ChangeNotifier {
   bool get isWorking => _state == WorkState.working;
   bool get isOnBreak => _state == WorkState.onBreak;
   bool get isIdle => _state == WorkState.idle;
+  String? get leaveNotification => _leaveNotification;
 
   String get elapsedFormatted {
     final hours = _elapsed.inHours.toString().padLeft(2, '0');
@@ -42,16 +49,22 @@ class WorkSessionProvider extends ChangeNotifier {
     return '$hours:$minutes:$seconds';
   }
 
+  String get breakElapsedFormatted {
+    final minutes = _breakElapsed.inMinutes.toString().padLeft(2, '0');
+    final seconds = (_breakElapsed.inSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
   String get locationStatusText {
     switch (_locationStatus) {
       case LocationStatus.inCompany:
-        return 'W firmie ✓';
+        return 'W firmie \u2713';
       case LocationStatus.outsideCompany:
-        return 'Poza firmą ⚠';
+        return 'Poza firm\u0105 \u26A0';
       case LocationStatus.gpsDisabled:
-        return 'GPS wyłączony';
+        return 'GPS wy\u0142\u0105czony';
       case LocationStatus.permissionDenied:
-        return 'Brak uprawnień GPS';
+        return 'Brak uprawnie\u0144 GPS';
       case LocationStatus.loading:
         return 'Sprawdzanie...';
     }
@@ -75,7 +88,11 @@ class WorkSessionProvider extends ChangeNotifier {
     _loadSavedState();
   }
 
-  /// Załaduj zapisany stan (przetrwanie restartu)
+  void clearLeaveNotification() {
+    _leaveNotification = null;
+    notifyListeners();
+  }
+
   Future<void> _loadSavedState() async {
     final prefs = await SharedPreferences.getInstance();
     _userPhone = prefs.getString('user_phone');
@@ -101,14 +118,16 @@ class WorkSessionProvider extends ChangeNotifier {
           _breakStartTime = DateTime.tryParse(breakStartStr);
         }
         _updateElapsed();
+        _updateBreakElapsed();
+        _startBreakTimer();
       }
     }
 
     _checkLocation();
+    _startLeaveCheckTimer();
     notifyListeners();
   }
 
-  /// Zapisz stan do SharedPreferences
   Future<void> _saveState() async {
     final prefs = await SharedPreferences.getInstance();
     if (_userPhone != null) prefs.setString('user_phone', _userPhone!);
@@ -136,14 +155,12 @@ class WorkSessionProvider extends ChangeNotifier {
         }
         prefs.setInt('break_duration_ms', _totalBreakDuration.inMilliseconds);
         if (_breakStartTime != null) {
-          prefs.setString(
-              'break_start_time', _breakStartTime!.toIso8601String());
+          prefs.setString('break_start_time', _breakStartTime!.toIso8601String());
         }
         break;
     }
   }
 
-  /// Ustaw dane pracownika
   Future<void> setEmployee(String name, String phone) async {
     _userName = name;
     _userPhone = phone;
@@ -153,35 +170,30 @@ class WorkSessionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Sprawdź lokalizację
   Future<void> _checkLocation() async {
     _locationStatus = await LocationService.checkLocationStatus();
     notifyListeners();
   }
 
-  /// Walidacja przed START/STOP
   Future<String?> _validateRequirements() async {
-    // Sprawdź internet
     bool hasNet = await ConnectivityService.hasInternet();
     if (!hasNet) {
-      return 'Włącz dane komórkowe lub WiFi';
+      return 'W\u0142\u0105cz dane kom\u00f3rkowe lub WiFi';
     }
 
-    // Sprawdź GPS
     bool gpsReady = await LocationService.isGpsReady();
     if (!gpsReady) {
-      return 'Włącz lokalizację (GPS)';
+      return 'W\u0142\u0105cz lokalizacj\u0119 (GPS)';
     }
 
-    // Sprawdź czy pracownik wybrany
     if (_userPhone == null || _userPhone!.isEmpty) {
       return 'Wpisz numer telefonu w Ustawieniach';
     }
 
-    return null; // OK
+    return null;
   }
 
-  /// PING lokalizacji co 15 min
+  // === PING co 15 min ===
   void _startPingTimer() {
     _pingTimer?.cancel();
     _pingTimer = Timer.periodic(const Duration(minutes: 15), (_) async {
@@ -196,7 +208,6 @@ class WorkSessionProvider extends ChangeNotifier {
               lon: position.longitude,
             );
 
-            // Aktualizuj status lokalizacji
             double distance = LocationService.distanceFromCompany(
                 position.latitude, position.longitude);
             _locationStatus = distance <= AppConstants.alertRadiusMeters
@@ -205,7 +216,7 @@ class WorkSessionProvider extends ChangeNotifier {
             notifyListeners();
           }
         } catch (e) {
-          // Cichy błąd - ping nie krytyczny
+          // Cichy blad
         }
       }
     });
@@ -216,7 +227,65 @@ class WorkSessionProvider extends ChangeNotifier {
     _pingTimer = null;
   }
 
-  /// START PRACY
+  // === SPRAWDZANIE STATUSU URLOPOW ===
+  void _startLeaveCheckTimer() {
+    _leaveCheckTimer?.cancel();
+    _leaveCheckTimer = Timer.periodic(const Duration(minutes: 5), (_) async {
+      await checkLeaveStatus();
+    });
+  }
+
+  Future<void> checkLeaveStatus() async {
+    if (_userPhone == null || _userPhone!.isEmpty) return;
+    try {
+      final url = '${AppConstants.webhookUrl}?action=CHECK_URLOP&phone=${_userPhone}';
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['notification'] != null && data['notification'] != '') {
+          _leaveNotification = data['notification'];
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      // Cichy blad
+    }
+  }
+
+  // === TIMER PRACY ===
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      _updateElapsed();
+      notifyListeners();
+    });
+  }
+
+  // === TIMER PRZERWY ===
+  void _startBreakTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      _updateBreakElapsed();
+      notifyListeners();
+    });
+  }
+
+  void _updateElapsed() {
+    if (_startTime == null) return;
+    final totalTime = DateTime.now().difference(_startTime!);
+    _elapsed = totalTime - _totalBreakDuration;
+    if (_state == WorkState.onBreak && _breakStartTime != null) {
+      _elapsed -= DateTime.now().difference(_breakStartTime!);
+    }
+    if (_elapsed.isNegative) _elapsed = Duration.zero;
+  }
+
+  void _updateBreakElapsed() {
+    if (_breakStartTime == null) return;
+    _breakElapsed = DateTime.now().difference(_breakStartTime!);
+  }
+
+  // === START PRACY ===
   Future<String?> startWork() async {
     final error = await _validateRequirements();
     if (error != null) return error;
@@ -230,7 +299,7 @@ class WorkSessionProvider extends ChangeNotifier {
       if (position == null) {
         _isSending = false;
         notifyListeners();
-        return 'Nie udało się pobrać lokalizacji';
+        return 'Nie uda\u0142o si\u0119 pobra\u0107 lokalizacji';
       }
 
       bool success = await WebhookService.sendAction(
@@ -243,11 +312,12 @@ class WorkSessionProvider extends ChangeNotifier {
       if (!success) {
         _isSending = false;
         notifyListeners();
-        return 'Błąd wysyłania danych. Sprawdź internet.';
+        return 'B\u0142\u0105d wysy\u0142ania danych. Sprawd\u017a internet.';
       }
 
       _startTime = DateTime.now();
       _totalBreakDuration = Duration.zero;
+      _breakElapsed = Duration.zero;
       _state = WorkState.working;
       _elapsed = Duration.zero;
       _startTimer();
@@ -267,11 +337,11 @@ class WorkSessionProvider extends ChangeNotifier {
       _isSending = false;
       _lastError = e.toString();
       notifyListeners();
-      return 'Błąd: $e';
+      return 'B\u0142\u0105d: $e';
     }
   }
 
-  /// STOP PRACY
+  // === STOP PRACY ===
   Future<String?> stopWork() async {
     final error = await _validateRequirements();
     if (error != null) return error;
@@ -284,7 +354,7 @@ class WorkSessionProvider extends ChangeNotifier {
       if (position == null) {
         _isSending = false;
         notifyListeners();
-        return 'Nie udało się pobrać lokalizacji';
+        return 'Nie uda\u0142o si\u0119 pobra\u0107 lokalizacji';
       }
 
       bool success = await WebhookService.sendAction(
@@ -297,7 +367,7 @@ class WorkSessionProvider extends ChangeNotifier {
       if (!success) {
         _isSending = false;
         notifyListeners();
-        return 'Błąd wysyłania danych. Sprawdź internet.';
+        return 'B\u0142\u0105d wysy\u0142ania danych. Sprawd\u017a internet.';
       }
 
       _timer?.cancel();
@@ -306,6 +376,7 @@ class WorkSessionProvider extends ChangeNotifier {
       _startTime = null;
       _totalBreakDuration = Duration.zero;
       _elapsed = Duration.zero;
+      _breakElapsed = Duration.zero;
 
       _isSending = false;
       await _saveState();
@@ -314,13 +385,13 @@ class WorkSessionProvider extends ChangeNotifier {
     } catch (e) {
       _isSending = false;
       notifyListeners();
-      return 'Błąd: $e';
+      return 'B\u0142\u0105d: $e';
     }
   }
 
-  /// PRZERWA
+  // === PRZERWA ===
   Future<String?> startBreak() async {
-    if (_state != WorkState.working) return 'Musisz być w pracy';
+    if (_state != WorkState.working) return 'Musisz by\u0107 w pracy';
 
     _isSending = true;
     notifyListeners();
@@ -330,7 +401,7 @@ class WorkSessionProvider extends ChangeNotifier {
       if (position == null) {
         _isSending = false;
         notifyListeners();
-        return 'Nie udało się pobrać lokalizacji';
+        return 'Nie uda\u0142o si\u0119 pobra\u0107 lokalizacji';
       }
 
       bool success = await WebhookService.sendAction(
@@ -343,13 +414,14 @@ class WorkSessionProvider extends ChangeNotifier {
       if (!success) {
         _isSending = false;
         notifyListeners();
-        return 'Błąd wysyłania danych.';
+        return 'B\u0142\u0105d wysy\u0142ania danych.';
       }
 
       _breakStartTime = DateTime.now();
-      _timer?.cancel();
+      _breakElapsed = Duration.zero;
       _stopPingTimer();
       _state = WorkState.onBreak;
+      _startBreakTimer();
 
       _isSending = false;
       await _saveState();
@@ -358,13 +430,13 @@ class WorkSessionProvider extends ChangeNotifier {
     } catch (e) {
       _isSending = false;
       notifyListeners();
-      return 'Błąd: $e';
+      return 'B\u0142\u0105d: $e';
     }
   }
 
-  /// KONIEC PRZERWY
+  // === KONIEC PRZERWY ===
   Future<String?> endBreak() async {
-    if (_state != WorkState.onBreak) return 'Nie jesteś na przerwie';
+    if (_state != WorkState.onBreak) return 'Nie jeste\u015b na przerwie';
 
     _isSending = true;
     notifyListeners();
@@ -374,7 +446,7 @@ class WorkSessionProvider extends ChangeNotifier {
       if (position == null) {
         _isSending = false;
         notifyListeners();
-        return 'Nie udało się pobrać lokalizacji';
+        return 'Nie uda\u0142o si\u0119 pobra\u0107 lokalizacji';
       }
 
       bool success = await WebhookService.sendAction(
@@ -387,13 +459,14 @@ class WorkSessionProvider extends ChangeNotifier {
       if (!success) {
         _isSending = false;
         notifyListeners();
-        return 'Błąd wysyłania danych.';
+        return 'B\u0142\u0105d wysy\u0142ania danych.';
       }
 
       if (_breakStartTime != null) {
         _totalBreakDuration += DateTime.now().difference(_breakStartTime!);
       }
       _breakStartTime = null;
+      _breakElapsed = Duration.zero;
       _state = WorkState.working;
       _updateElapsed();
       _startTimer();
@@ -406,29 +479,15 @@ class WorkSessionProvider extends ChangeNotifier {
     } catch (e) {
       _isSending = false;
       notifyListeners();
-      return 'Błąd: $e';
+      return 'B\u0142\u0105d: $e';
     }
-  }
-
-  void _startTimer() {
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      _updateElapsed();
-      notifyListeners();
-    });
-  }
-
-  void _updateElapsed() {
-    if (_startTime == null) return;
-    final totalTime = DateTime.now().difference(_startTime!);
-    _elapsed = totalTime - _totalBreakDuration;
-    if (_elapsed.isNegative) _elapsed = Duration.zero;
   }
 
   @override
   void dispose() {
     _timer?.cancel();
     _pingTimer?.cancel();
+    _leaveCheckTimer?.cancel();
     super.dispose();
   }
 }

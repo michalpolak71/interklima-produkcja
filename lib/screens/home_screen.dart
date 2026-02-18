@@ -17,14 +17,47 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    // Sprawdź czy pracownik wybrany
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final provider =
-          Provider.of<WorkSessionProvider>(context, listen: false);
+      final provider = Provider.of<WorkSessionProvider>(context, listen: false);
       if (provider.userPhone == null || provider.userPhone!.isEmpty) {
         _showSelectEmployeeDialog();
       }
+      // Listen for leave notifications
+      provider.addListener(_checkLeaveNotification);
     });
+  }
+
+  @override
+  void dispose() {
+    // Remove listener safely
+    super.dispose();
+  }
+
+  void _checkLeaveNotification() {
+    final provider = Provider.of<WorkSessionProvider>(context, listen: false);
+    if (provider.leaveNotification != null) {
+      _showLeaveNotificationDialog(provider.leaveNotification!);
+      provider.clearLeaveNotification();
+    }
+  }
+
+  void _showLeaveNotificationDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1B2838),
+        title: const Text('Wniosek urlopowy',
+            style: TextStyle(color: Colors.white)),
+        content: Text(message,
+            style: const TextStyle(color: Colors.white70, fontSize: 16)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showSelectEmployeeDialog() {
@@ -35,7 +68,7 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: const Color(0xFF1B2838),
         title: const Text('Witaj!', style: TextStyle(color: Colors.white)),
         content: const Text(
-          'Aby korzystać z aplikacji, najpierw wybierz swoje nazwisko w Ustawieniach.',
+          'Aby korzysta\u0107 z aplikacji, wpisz sw\u00f3j numer telefonu w Ustawieniach.',
           style: TextStyle(color: Colors.white70),
         ),
         actions: [
@@ -44,11 +77,10 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.of(ctx).pop();
               Navigator.push(
                 context,
-                MaterialPageRoute(
-                    builder: (_) => const SettingsScreen()),
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
               );
             },
-            child: const Text('Przejdź do Ustawień'),
+            child: const Text('Przejd\u017a do Ustawie\u0144'),
           ),
         ],
       ),
@@ -82,17 +114,16 @@ class _HomeScreenState extends State<HomeScreen> {
     if (error != null) {
       _showError(error);
     } else {
-      _showSuccess('Praca rozpoczęta ✓');
+      _showSuccess('Praca rozpocz\u0119ta \u2713');
     }
   }
 
   Future<void> _handleStop(WorkSessionProvider provider) async {
-    // Potwierdzenie
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1B2838),
-        title: const Text('Zakończyć pracę?',
+        title: const Text('Zako\u0144czy\u0107 prac\u0119?',
             style: TextStyle(color: Colors.white)),
         content: Text(
           'Czas pracy: ${provider.elapsedFormatted}',
@@ -106,7 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Tak, kończę'),
+            child: const Text('Tak, ko\u0144cz\u0119'),
           ),
         ],
       ),
@@ -117,7 +148,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (error != null) {
         _showError(error);
       } else {
-        _showSuccess('Praca zakończona ✓');
+        _showSuccess('Praca zako\u0144czona \u2713');
       }
     }
   }
@@ -127,7 +158,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (error != null) {
       _showError(error);
     } else {
-      _showSuccess('Przerwa rozpoczęta');
+      _showSuccess('Przerwa rozpocz\u0119ta');
     }
   }
 
@@ -136,7 +167,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (error != null) {
       _showError(error);
     } else {
-      _showSuccess('Przerwa zakończona ✓');
+      _showSuccess('Przerwa zako\u0144czona \u2713');
     }
   }
 
@@ -148,10 +179,7 @@ class _HomeScreenState extends State<HomeScreen> {
           appBar: AppBar(
             title: Text(
               provider.userName ?? 'INTERKLIMA',
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
             ),
             backgroundColor: const Color(0xFF1B2838),
             centerTitle: true,
@@ -162,48 +190,35 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               child: Column(
                 children: [
-                  // Logo
-                  Image.asset(
-                    'assets/images/logo_transparent.png',
-                    height: 80,
-                    fit: BoxFit.contain,
-                  ),
+                  Image.asset('assets/images/logo_transparent.png',
+                      height: 80, fit: BoxFit.contain),
                   const SizedBox(height: 24),
 
                   // Status lokalizacji
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     decoration: BoxDecoration(
                       color: provider.locationStatusColor.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: provider.locationStatusColor.withOpacity(0.4),
-                      ),
+                          color: provider.locationStatusColor.withOpacity(0.4)),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          _getLocationIcon(provider.locationStatus),
-                          color: provider.locationStatusColor,
-                          size: 20,
-                        ),
+                        Icon(_getLocationIcon(provider.locationStatus),
+                            color: provider.locationStatusColor, size: 20),
                         const SizedBox(width: 8),
-                        Text(
-                          provider.locationStatusText,
-                          style: TextStyle(
-                            color: provider.locationStatusColor,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                          ),
-                        ),
+                        Text(provider.locationStatusText,
+                            style: TextStyle(
+                                color: provider.locationStatusColor,
+                                fontWeight: FontWeight.w600, fontSize: 14)),
                       ],
                     ),
                   ),
                   const SizedBox(height: 32),
 
-                  // Biegnący licznik
+                  // Licznik
                   Container(
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
@@ -211,11 +226,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: [
                         BoxShadow(
-                          color: _getTimerGlowColor(provider)
-                              .withOpacity(0.2),
-                          blurRadius: 20,
-                          spreadRadius: 2,
-                        ),
+                          color: _getTimerGlowColor(provider).withOpacity(0.2),
+                          blurRadius: 20, spreadRadius: 2),
                       ],
                     ),
                     child: Column(
@@ -224,24 +236,57 @@ class _HomeScreenState extends State<HomeScreen> {
                           _getStateLabel(provider.state),
                           style: TextStyle(
                             color: _getStateColor(provider.state),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 2,
-                          ),
+                            fontSize: 14, fontWeight: FontWeight.w600,
+                            letterSpacing: 2),
                         ),
                         const SizedBox(height: 12),
+                        // Glowny licznik - czas pracy
                         Text(
                           provider.elapsedFormatted,
                           style: TextStyle(
-                            color: provider.isIdle
-                                ? Colors.white38
-                                : Colors.white,
-                            fontSize: 56,
-                            fontWeight: FontWeight.w300,
-                            fontFamily: 'monospace',
-                            letterSpacing: 4,
-                          ),
+                            color: provider.isIdle ? Colors.white38 : Colors.white,
+                            fontSize: 56, fontWeight: FontWeight.w300,
+                            fontFamily: 'monospace', letterSpacing: 4),
                         ),
+                        // Licznik przerwy
+                        if (provider.isOnBreak) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.coffee_rounded,
+                                    color: Colors.orange, size: 20),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Przerwa: ${provider.breakElapsedFormatted}',
+                                  style: const TextStyle(
+                                    color: Colors.orange,
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w600,
+                                    fontFamily: 'monospace'),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            provider.breakElapsed.inMinutes >= 30
+                                ? '\u26A0 Przekroczono 30 min p\u0142atnej przerwy'
+                                : 'P\u0142atna przerwa: do 30 min',
+                            style: TextStyle(
+                              color: provider.breakElapsed.inMinutes >= 30
+                                  ? Colors.red.shade300
+                                  : Colors.white38,
+                              fontSize: 12),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -251,18 +296,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   if (provider.isSending)
                     const Padding(
                       padding: EdgeInsets.all(24),
-                      child: Column(
-                        children: [
-                          CircularProgressIndicator(
-                            color: Color(0xFF4FC3F7),
-                          ),
-                          SizedBox(height: 12),
-                          Text(
-                            'Wysyłanie...',
-                            style: TextStyle(color: Colors.white54),
-                          ),
-                        ],
-                      ),
+                      child: Column(children: [
+                        CircularProgressIndicator(color: Color(0xFF4FC3F7)),
+                        SizedBox(height: 12),
+                        Text('Wysy\u0142anie...',
+                            style: TextStyle(color: Colors.white54)),
+                      ]),
                     )
                   else
                     _buildButtons(provider),
@@ -286,70 +325,40 @@ class _HomeScreenState extends State<HomeScreen> {
         );
 
       case WorkState.working:
-        return Column(
-          children: [
-            _buildActionButton(
-              label: 'STOP PRACY',
-              icon: Icons.stop_rounded,
-              color: const Color(0xFFE53935),
-              onPressed: () => _handleStop(provider),
-            ),
-            const SizedBox(height: 16),
-            _buildActionButton(
-              label: 'PRZERWA',
-              icon: Icons.pause_rounded,
-              color: const Color(0xFFFFA726),
-              onPressed: () => _handleBreak(provider),
-              small: true,
-            ),
-          ],
-        );
+        return Column(children: [
+          _buildActionButton(
+            label: 'STOP PRACY',
+            icon: Icons.stop_rounded,
+            color: const Color(0xFFE53935),
+            onPressed: () => _handleStop(provider),
+          ),
+          const SizedBox(height: 16),
+          _buildActionButton(
+            label: 'PRZERWA',
+            icon: Icons.pause_rounded,
+            color: const Color(0xFFFFA726),
+            onPressed: () => _handleBreak(provider),
+            small: true,
+          ),
+        ]);
 
       case WorkState.onBreak:
-        return Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              margin: const EdgeInsets.only(bottom: 20),
-              decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-                border:
-                    Border.all(color: Colors.orange.withOpacity(0.3)),
-              ),
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.coffee_rounded,
-                      color: Colors.orange, size: 24),
-                  SizedBox(width: 8),
-                  Text(
-                    'Jesteś na przerwie',
-                    style: TextStyle(
-                      color: Colors.orange,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            _buildActionButton(
-              label: 'KONIEC PRZERWY',
-              icon: Icons.play_arrow_rounded,
-              color: const Color(0xFFFFA726),
-              onPressed: () => _handleEndBreak(provider),
-            ),
-            const SizedBox(height: 16),
-            _buildActionButton(
-              label: 'STOP PRACY',
-              icon: Icons.stop_rounded,
-              color: const Color(0xFFE53935),
-              onPressed: () => _handleStop(provider),
-              small: true,
-            ),
-          ],
-        );
+        return Column(children: [
+          _buildActionButton(
+            label: 'KONIEC PRZERWY',
+            icon: Icons.play_arrow_rounded,
+            color: const Color(0xFFFFA726),
+            onPressed: () => _handleEndBreak(provider),
+          ),
+          const SizedBox(height: 16),
+          _buildActionButton(
+            label: 'STOP PRACY',
+            icon: Icons.stop_rounded,
+            color: const Color(0xFFE53935),
+            onPressed: () => _handleStop(provider),
+            small: true,
+          ),
+        ]);
     }
   }
 
@@ -366,20 +375,16 @@ class _HomeScreenState extends State<HomeScreen> {
       child: ElevatedButton.icon(
         onPressed: onPressed,
         icon: Icon(icon, size: small ? 24 : 32),
-        label: Text(
-          label,
-          style: TextStyle(
-            fontSize: small ? 16 : 20,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.5,
-          ),
-        ),
+        label: Text(label,
+            style: TextStyle(
+                fontSize: small ? 16 : 20,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.5)),
         style: ElevatedButton.styleFrom(
           backgroundColor: color,
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
+              borderRadius: BorderRadius.circular(16)),
           elevation: 4,
           shadowColor: color.withOpacity(0.4),
         ),
@@ -397,26 +402,16 @@ class _HomeScreenState extends State<HomeScreen> {
             decoration: const BoxDecoration(
               gradient: LinearGradient(
                 colors: [Color(0xFF1B3A5C), Color(0xFF0F1923)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+                begin: Alignment.topLeft, end: Alignment.bottomRight),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Image.asset(
-                  'assets/images/logo_transparent.png',
-                  height: 50,
-                ),
+                Image.asset('assets/images/logo_transparent.png', height: 50),
                 const SizedBox(height: 12),
-                const Text(
-                  'Dział Produkcja',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 14,
-                  ),
-                ),
+                const Text('Dzia\u0142 Produkcja',
+                    style: TextStyle(color: Colors.white70, fontSize: 14)),
               ],
             ),
           ),
@@ -425,11 +420,8 @@ class _HomeScreenState extends State<HomeScreen> {
             title: 'Wniosek urlopowy',
             onTap: () {
               Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const LeaveRequestScreen()),
-              );
+              Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const LeaveRequestScreen()));
             },
           ),
           _drawerItem(
@@ -437,11 +429,8 @@ class _HomeScreenState extends State<HomeScreen> {
             title: 'Dni wolne 2026',
             onTap: () {
               Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const HolidaysScreen()),
-              );
+              Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const HolidaysScreen()));
             },
           ),
           const Divider(color: Colors.white12),
@@ -450,11 +439,8 @@ class _HomeScreenState extends State<HomeScreen> {
             title: 'Ustawienia',
             onTap: () {
               Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const SettingsScreen()),
-              );
+              Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()));
             },
           ),
         ],
@@ -476,49 +462,35 @@ class _HomeScreenState extends State<HomeScreen> {
 
   IconData _getLocationIcon(LocationStatus status) {
     switch (status) {
-      case LocationStatus.inCompany:
-        return Icons.location_on;
-      case LocationStatus.outsideCompany:
-        return Icons.location_off;
-      case LocationStatus.gpsDisabled:
-        return Icons.gps_off;
-      case LocationStatus.permissionDenied:
-        return Icons.block;
-      case LocationStatus.loading:
-        return Icons.my_location;
+      case LocationStatus.inCompany: return Icons.location_on;
+      case LocationStatus.outsideCompany: return Icons.location_off;
+      case LocationStatus.gpsDisabled: return Icons.gps_off;
+      case LocationStatus.permissionDenied: return Icons.block;
+      case LocationStatus.loading: return Icons.my_location;
     }
   }
 
   String _getStateLabel(WorkState state) {
     switch (state) {
-      case WorkState.idle:
-        return 'GOTOWY';
-      case WorkState.working:
-        return 'W PRACY';
-      case WorkState.onBreak:
-        return 'PRZERWA';
+      case WorkState.idle: return 'GOTOWY';
+      case WorkState.working: return 'W PRACY';
+      case WorkState.onBreak: return 'PRZERWA';
     }
   }
 
   Color _getStateColor(WorkState state) {
     switch (state) {
-      case WorkState.idle:
-        return Colors.white38;
-      case WorkState.working:
-        return Colors.green;
-      case WorkState.onBreak:
-        return Colors.orange;
+      case WorkState.idle: return Colors.white38;
+      case WorkState.working: return Colors.green;
+      case WorkState.onBreak: return Colors.orange;
     }
   }
 
   Color _getTimerGlowColor(WorkSessionProvider provider) {
     switch (provider.state) {
-      case WorkState.idle:
-        return Colors.blueGrey;
-      case WorkState.working:
-        return Colors.green;
-      case WorkState.onBreak:
-        return Colors.orange;
+      case WorkState.idle: return Colors.blueGrey;
+      case WorkState.working: return Colors.green;
+      case WorkState.onBreak: return Colors.orange;
     }
   }
 }
