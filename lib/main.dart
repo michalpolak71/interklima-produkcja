@@ -19,13 +19,12 @@ class InterKlimaApp extends StatelessWidget {
         title: 'INTERKLIMA',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFF1B3A5C),
-            brightness: Brightness.dark,
-          ),
+          brightness: Brightness.dark,
           scaffoldBackgroundColor: const Color(0xFF0F1923),
-          useMaterial3: true,
-          fontFamily: 'Roboto',
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Color(0xFF1B2838),
+            foregroundColor: Colors.white,
+          ),
         ),
         home: const HomeScreen(),
       ),

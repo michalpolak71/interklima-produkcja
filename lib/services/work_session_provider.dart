@@ -18,6 +18,7 @@ class WorkSessionProvider extends ChangeNotifier {
   Duration _totalBreakDuration = Duration.zero;
   Timer? _timer;
   Timer? _pingTimer;
+  Timer? _locationRefreshTimer;
   Timer? _leaveCheckTimer;
   Duration _elapsed = Duration.zero;
   Duration _breakElapsed = Duration.zero;
@@ -28,7 +29,6 @@ class WorkSessionProvider extends ChangeNotifier {
   bool _isSending = false;
   String? _leaveNotification;
 
-  // Getters
   WorkState get state => _state;
   Duration get elapsed => _elapsed;
   Duration get breakElapsed => _breakElapsed;
@@ -110,7 +110,7 @@ class WorkSessionProvider extends ChangeNotifier {
       if (stateStr == 'working' && _startTime != null) {
         _state = WorkState.working;
         _updateElapsed();
-        _startTimer();
+        _startWorkTimer();
         _startPingTimer();
       } else if (stateStr == 'onBreak' && _startTime != null) {
         _state = WorkState.onBreak;
@@ -123,7 +123,8 @@ class WorkSessionProvider extends ChangeNotifier {
       }
     }
 
-    _checkLocation();
+    _refreshLocation();
+    _startLocationRefreshTimer();
     _startLeaveCheckTimer();
     notifyListeners();
   }
@@ -142,21 +143,15 @@ class WorkSessionProvider extends ChangeNotifier {
         break;
       case WorkState.working:
         prefs.setString('work_state', 'working');
-        if (_startTime != null) {
-          prefs.setString('start_time', _startTime!.toIso8601String());
-        }
+        if (_startTime != null) prefs.setString('start_time', _startTime!.toIso8601String());
         prefs.setInt('break_duration_ms', _totalBreakDuration.inMilliseconds);
         prefs.remove('break_start_time');
         break;
       case WorkState.onBreak:
         prefs.setString('work_state', 'onBreak');
-        if (_startTime != null) {
-          prefs.setString('start_time', _startTime!.toIso8601String());
-        }
+        if (_startTime != null) prefs.setString('start_time', _startTime!.toIso8601String());
         prefs.setInt('break_duration_ms', _totalBreakDuration.inMilliseconds);
-        if (_breakStartTime != null) {
-          prefs.setString('break_start_time', _breakStartTime!.toIso8601String());
-        }
+        if (_breakStartTime != null) prefs.setString('break_start_time', _breakStartTime!.toIso8601String());
         break;
     }
   }
@@ -170,33 +165,32 @@ class WorkSessionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _checkLocation() async {
+  // === ODSWIEZANIE LOKALIZACJI CO 60s ===
+  Future<void> _refreshLocation() async {
     _locationStatus = await LocationService.checkLocationStatus();
     notifyListeners();
   }
 
+  void _startLocationRefreshTimer() {
+    _locationRefreshTimer?.cancel();
+    _locationRefreshTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      _refreshLocation();
+    });
+  }
+
   Future<String?> _validateRequirements() async {
     bool hasNet = await ConnectivityService.hasInternet();
-    if (!hasNet) {
-      return 'W\u0142\u0105cz dane kom\u00f3rkowe lub WiFi';
-    }
-
+    if (!hasNet) return 'W\u0142\u0105cz dane kom\u00f3rkowe lub WiFi';
     bool gpsReady = await LocationService.isGpsReady();
-    if (!gpsReady) {
-      return 'W\u0142\u0105cz lokalizacj\u0119 (GPS)';
-    }
-
-    if (_userPhone == null || _userPhone!.isEmpty) {
-      return 'Wpisz numer telefonu w Ustawieniach';
-    }
-
+    if (!gpsReady) return 'W\u0142\u0105cz lokalizacj\u0119 (GPS)';
+    if (_userPhone == null || _userPhone!.isEmpty) return 'Wpisz numer telefonu w Ustawieniach';
     return null;
   }
 
-  // === PING co 15 min ===
+  // === PING CO 1 GODZINE ===
   void _startPingTimer() {
     _pingTimer?.cancel();
-    _pingTimer = Timer.periodic(const Duration(minutes: 15), (_) async {
+    _pingTimer = Timer.periodic(const Duration(minutes: 60), (_) async {
       if (_state == WorkState.working && _userPhone != null) {
         try {
           Position? position = await LocationService.getCurrentPosition();
@@ -207,7 +201,6 @@ class WorkSessionProvider extends ChangeNotifier {
               lat: position.latitude,
               lon: position.longitude,
             );
-
             double distance = LocationService.distanceFromCompany(
                 position.latitude, position.longitude);
             _locationStatus = distance <= AppConstants.alertRadiusMeters
@@ -216,7 +209,7 @@ class WorkSessionProvider extends ChangeNotifier {
             notifyListeners();
           }
         } catch (e) {
-          // Cichy blad
+          // Cichy blad - ping nie krytyczny
         }
       }
     });
@@ -227,9 +220,11 @@ class WorkSessionProvider extends ChangeNotifier {
     _pingTimer = null;
   }
 
-  // === SPRAWDZANIE STATUSU URLOPOW ===
+  // === SPRAWDZANIE STATUSU URLOPOW CO 5 MIN ===
   void _startLeaveCheckTimer() {
     _leaveCheckTimer?.cancel();
+    // Sprawdz od razu przy starcie
+    Future.delayed(const Duration(seconds: 10), () => checkLeaveStatus());
     _leaveCheckTimer = Timer.periodic(const Duration(minutes: 5), (_) async {
       await checkLeaveStatus();
     });
@@ -238,13 +233,17 @@ class WorkSessionProvider extends ChangeNotifier {
   Future<void> checkLeaveStatus() async {
     if (_userPhone == null || _userPhone!.isEmpty) return;
     try {
-      final url = '${AppConstants.webhookUrl}?action=CHECK_URLOP&phone=${_userPhone}';
-      final response = await http.get(Uri.parse(url));
+      final url = '${AppConstants.webhookUrl}?action=CHECK_URLOP&phone=$_userPhone';
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 15));
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['notification'] != null && data['notification'] != '') {
-          _leaveNotification = data['notification'];
-          notifyListeners();
+        final body = response.body;
+        // Apps Script redirects, so response may be HTML. Try to find JSON.
+        if (body.contains('"notification"')) {
+          final data = jsonDecode(body);
+          if (data['notification'] != null && data['notification'].toString().isNotEmpty) {
+            _leaveNotification = data['notification'].toString();
+            notifyListeners();
+          }
         }
       }
     } catch (e) {
@@ -252,8 +251,8 @@ class WorkSessionProvider extends ChangeNotifier {
     }
   }
 
-  // === TIMER PRACY ===
-  void _startTimer() {
+  // === TIMERY ===
+  void _startWorkTimer() {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       _updateElapsed();
@@ -261,11 +260,11 @@ class WorkSessionProvider extends ChangeNotifier {
     });
   }
 
-  // === TIMER PRZERWY ===
   void _startBreakTimer() {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       _updateBreakElapsed();
+      _updateElapsed();
       notifyListeners();
     });
   }
@@ -303,16 +302,14 @@ class WorkSessionProvider extends ChangeNotifier {
       }
 
       bool success = await WebhookService.sendAction(
-        type: 'START',
-        phone: _userPhone!,
-        lat: position.latitude,
-        lon: position.longitude,
+        type: 'START', phone: _userPhone!,
+        lat: position.latitude, lon: position.longitude,
       );
 
       if (!success) {
         _isSending = false;
         notifyListeners();
-        return 'B\u0142\u0105d wysy\u0142ania danych. Sprawd\u017a internet.';
+        return 'B\u0142\u0105d wysy\u0142ania. Sprawd\u017a internet.';
       }
 
       _startTime = DateTime.now();
@@ -320,14 +317,12 @@ class WorkSessionProvider extends ChangeNotifier {
       _breakElapsed = Duration.zero;
       _state = WorkState.working;
       _elapsed = Duration.zero;
-      _startTimer();
+      _startWorkTimer();
       _startPingTimer();
 
-      double distance = LocationService.distanceFromCompany(
-          position.latitude, position.longitude);
+      double distance = LocationService.distanceFromCompany(position.latitude, position.longitude);
       _locationStatus = distance <= AppConstants.alertRadiusMeters
-          ? LocationStatus.inCompany
-          : LocationStatus.outsideCompany;
+          ? LocationStatus.inCompany : LocationStatus.outsideCompany;
 
       _isSending = false;
       await _saveState();
@@ -358,16 +353,14 @@ class WorkSessionProvider extends ChangeNotifier {
       }
 
       bool success = await WebhookService.sendAction(
-        type: 'STOP',
-        phone: _userPhone!,
-        lat: position.latitude,
-        lon: position.longitude,
+        type: 'STOP', phone: _userPhone!,
+        lat: position.latitude, lon: position.longitude,
       );
 
       if (!success) {
         _isSending = false;
         notifyListeners();
-        return 'B\u0142\u0105d wysy\u0142ania danych. Sprawd\u017a internet.';
+        return 'B\u0142\u0105d wysy\u0142ania. Sprawd\u017a internet.';
       }
 
       _timer?.cancel();
@@ -380,6 +373,7 @@ class WorkSessionProvider extends ChangeNotifier {
 
       _isSending = false;
       await _saveState();
+      _refreshLocation();
       notifyListeners();
       return null;
     } catch (e) {
@@ -405,16 +399,14 @@ class WorkSessionProvider extends ChangeNotifier {
       }
 
       bool success = await WebhookService.sendAction(
-        type: 'PRZERWA',
-        phone: _userPhone!,
-        lat: position.latitude,
-        lon: position.longitude,
+        type: 'PRZERWA', phone: _userPhone!,
+        lat: position.latitude, lon: position.longitude,
       );
 
       if (!success) {
         _isSending = false;
         notifyListeners();
-        return 'B\u0142\u0105d wysy\u0142ania danych.';
+        return 'B\u0142\u0105d wysy\u0142ania.';
       }
 
       _breakStartTime = DateTime.now();
@@ -450,16 +442,14 @@ class WorkSessionProvider extends ChangeNotifier {
       }
 
       bool success = await WebhookService.sendAction(
-        type: 'KONIEC_PRZERWY',
-        phone: _userPhone!,
-        lat: position.latitude,
-        lon: position.longitude,
+        type: 'KONIEC_PRZERWY', phone: _userPhone!,
+        lat: position.latitude, lon: position.longitude,
       );
 
       if (!success) {
         _isSending = false;
         notifyListeners();
-        return 'B\u0142\u0105d wysy\u0142ania danych.';
+        return 'B\u0142\u0105d wysy\u0142ania.';
       }
 
       if (_breakStartTime != null) {
@@ -469,11 +459,12 @@ class WorkSessionProvider extends ChangeNotifier {
       _breakElapsed = Duration.zero;
       _state = WorkState.working;
       _updateElapsed();
-      _startTimer();
+      _startWorkTimer();
       _startPingTimer();
 
       _isSending = false;
       await _saveState();
+      _refreshLocation();
       notifyListeners();
       return null;
     } catch (e) {
@@ -487,6 +478,7 @@ class WorkSessionProvider extends ChangeNotifier {
   void dispose() {
     _timer?.cancel();
     _pingTimer?.cancel();
+    _locationRefreshTimer?.cancel();
     _leaveCheckTimer?.cancel();
     super.dispose();
   }
