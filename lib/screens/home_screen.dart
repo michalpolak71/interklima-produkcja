@@ -6,6 +6,9 @@ import 'settings_screen.dart';
 import 'holidays_screen.dart';
 import 'leave_request_screen.dart';
 import 'leave_approval_screen.dart';
+import 'my_leaves_screen.dart';
+import 'my_hours_screen.dart';
+import 'workers_list_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -360,10 +363,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             Navigator.pop(context);
             Navigator.push(context, MaterialPageRoute(builder: (_) => const LeaveRequestScreen()));
           }),
+          _drawerItem(icon: Icons.list_alt_rounded, title: 'Moje wnioski', onTap: () {
+            Navigator.pop(context);
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const MyLeavesScreen()));
+          }),
+          _drawerItem(icon: Icons.access_time_rounded, title: 'Moje godziny', onTap: () {
+            Navigator.pop(context);
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const MyHoursScreen()));
+          }),
           if (_isApprover(provider.userPhone))
             _drawerItem(icon: Icons.approval_rounded, title: 'Zatwierdzanie urlop\u00f3w', onTap: () {
               Navigator.pop(context);
               Navigator.push(context, MaterialPageRoute(builder: (_) => const LeaveApprovalScreen()));
+            }),
+          if (_isApprover(provider.userPhone))
+            _drawerItem(icon: Icons.people_rounded, title: 'Lokalizacja pracownik\u00f3w', onTap: () {
+              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const WorkersListScreen()));
             }),
           _drawerItem(icon: Icons.calendar_month_rounded, title: 'Dni wolne 2026', onTap: () {
             Navigator.pop(context);

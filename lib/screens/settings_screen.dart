@@ -119,7 +119,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
             const Spacer(),
-            const Center(child: Text('Wersja 1.3.0 \u2022 Dzia\u0142 Produkcja',
+            const Center(child: Text('Wersja 1.4.0 \u2022 Dzia\u0142 Produkcja',
                 style: TextStyle(color: Colors.white24, fontSize: 12))),
           ],
         ),
