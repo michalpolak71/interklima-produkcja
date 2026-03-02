@@ -11,6 +11,7 @@ class WebhookService {
     required String phone,
     required double lat,
     required double lon,
+    Map<String, String>? extraFields,
   }) async {
     final now = DateTime.now();
     final dateStr = DateFormat('dd.MM.yyyy').format(now);
