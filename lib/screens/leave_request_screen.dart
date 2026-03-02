@@ -109,6 +109,13 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
         phone: provider.userPhone!,
         lat: 0,
         lon: 0,
+        extraFields: {
+          'urlop_od': DateFormat('dd.MM.yyyy').format(_startDate!),
+          'urlop_do': DateFormat('dd.MM.yyyy').format(_endDate!),
+          'urlop_typ': _leaveType,
+          'urlop_uwagi': _noteController.text,
+          'urlop_dni': _dayCount.toString(),
+        },
       );
 
       setState(() => _isSending = false);
