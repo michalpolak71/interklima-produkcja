@@ -24,6 +24,7 @@ class WebhookService {
       'type': type,
       'lat': lat.toStringAsFixed(6),
       'lon': lon.toStringAsFixed(6),
+      if (extraFields != null) ...extraFields,
     };
 
     try {
